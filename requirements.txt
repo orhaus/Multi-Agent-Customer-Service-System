@@ -1,0 +1,5 @@
+anthropic~=1.4          # Claude API client
+pydantic~=2.13          # schemas for messages, routes, verdicts
+python-dotenv~=1.2      # loads .env in local development
+
+pytest~=9.0             # dev only
