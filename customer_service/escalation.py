@@ -23,6 +23,11 @@ class EscalationReason(StrEnum):
     LOW_CONFIDENCE = "low_confidence"
     TURN_LIMIT_REACHED = "turn_limit_reached"
 
+    # Set by the orchestrator after an agent has run. escalation_reason() never
+    # returns these, because it runs before any agent does.
+    AGENT_DECLINED = "agent_declined"
+    AGENT_FAILED = "agent_failed"
+
 
 def escalation_reason(
     route: Route,

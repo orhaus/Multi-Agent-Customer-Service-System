@@ -66,11 +66,27 @@ class Route(BaseModel):
     reasoning: str = Field(min_length=1)
 
 
+class AgentReply(BaseModel):
+    """A specialist's answer, plus whether it should have been the one answering.
+
+    Like Route, Claude fills this in, so extra fields are forbidden. Field order
+    matters: the model writes `handled` before `reply`, so it decides whether
+    the problem is its own before drafting an answer to it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    handled: bool
+    suggested_category: Category  # only read when handled is False
+    reply: str
+
+
 class Resolution(BaseModel):
     """What the orchestrator hands back to the caller."""
 
     conversation_id: str
-    category: Category
+    category: Category  # the specialist that finally answered, or would have
     reply: str
     escalated: bool = False
     escalation_reason: str | None = None
+    rerouted_from: Category | None = None  # set when the router's first pick declined

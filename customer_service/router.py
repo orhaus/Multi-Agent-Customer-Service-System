@@ -8,6 +8,7 @@ message. Everything expensive happens after it has decided who should answer.
 import logging
 
 import anthropic
+from pydantic import ValidationError
 
 from customer_service.config import Settings, get_settings
 from customer_service.schemas import Category, Conversation, Route
@@ -74,5 +75,17 @@ class Router:
         except anthropic.AnthropicError:
             logger.exception("Routing call failed for conversation %s", conversation.id)
             return _undecided("Routing call failed; handing off to a human.")
+        except ValidationError:
+            # The API is told about Route's bounds but does not enforce them -
+            # the SDK moves `minimum`/`maximum` into the schema description. A
+            # model that answers with confidence 1.4 lands here, not upstream.
+            logger.exception("Router returned an invalid Route for conversation %s", conversation.id)
+            return _undecided("Router produced an unusable classification; handing off to a human.")
 
-        return response.parsed_output
+        route = response.parsed_output
+        if route is None:
+            # parsed_output is Optional: a response with no text block yields None.
+            logger.error("Router returned no classification for conversation %s", conversation.id)
+            return _undecided("Router returned no classification; handing off to a human.")
+
+        return route

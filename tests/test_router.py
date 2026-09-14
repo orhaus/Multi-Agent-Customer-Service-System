@@ -10,6 +10,9 @@ from unittest.mock import MagicMock
 
 import anthropic
 import httpx2
+from anthropic.lib._parse._response import parse_response
+from anthropic.types import Message as SDKMessage
+from pydantic import ValidationError
 
 from customer_service.config import Settings
 from customer_service.router import SYSTEM_PROMPT, Router
@@ -99,3 +102,66 @@ def test_api_failure_escalates_instead_of_raising():
     assert route.category is Category.UNKNOWN
     assert route.confidence == 0.0
 
+
+
+# --- contract tests -------------------------------------------------------
+# The tests above use a hand-built stand-in for the SDK's response. These use
+# the SDK's real parsing on a real Message, so they fail if our assumptions
+# about the library are wrong - which a mock can never tell us.
+
+
+def sdk_message(text: str) -> SDKMessage:
+    """A real anthropic.types.Message, validated the way a live response is."""
+    return SDKMessage.model_validate(
+        {
+            "id": "msg_1",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-haiku-4-5",
+            "stop_reason": "end_turn",
+            "stop_sequence": None,
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+            "content": [{"type": "text", "text": text}] if text else [],
+        }
+    )
+
+
+def test_parsed_output_really_is_on_the_response_object():
+    """Pins the SDK contract our mocks assume."""
+    parsed = parse_response(
+        response=sdk_message('{"category":"billing","confidence":0.9,"reasoning":"refund"}'),
+        output_format=Route,
+    )
+    assert parsed.parsed_output == Route(
+        category=Category.BILLING, confidence=0.9, reasoning="refund"
+    )
+
+
+def test_out_of_range_confidence_escalates_rather_than_crashing():
+    """The API does not enforce Route's bounds - only pydantic does, on our side."""
+    try:
+        parse_response(
+            response=sdk_message('{"category":"billing","confidence":1.4,"reasoning":"x"}'),
+            output_format=Route,
+        )
+        raise AssertionError("expected a ValidationError from the SDK")
+    except ValidationError as exc:
+        error = exc
+
+    router = Router(client=fake_client(error=error), settings=SETTINGS)
+    route = router.route(conversation(("customer", "I want a refund")))
+
+    assert route.category is Category.UNKNOWN
+    assert route.confidence == 0.0
+
+
+def test_a_response_with_no_text_block_escalates():
+    """parsed_output is Optional - an empty response yields None, not a Route."""
+    client = MagicMock()
+    client.messages.parse.return_value = parse_response(
+        response=sdk_message(""), output_format=Route
+    )
+    route = Router(client=client, settings=SETTINGS).route(conversation(("customer", "hi")))
+
+    assert route.category is Category.UNKNOWN
+    assert route.confidence == 0.0
