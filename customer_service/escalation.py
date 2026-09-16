@@ -29,6 +29,18 @@ class EscalationReason(StrEnum):
     AGENT_FAILED = "agent_failed"
 
 
+def turn_limit_reached(conversation: Conversation, settings: Settings | None = None) -> bool:
+    """Has this conversation used up its budget of agent turns?
+
+    Its own function because the orchestrator needs it on turns that never call
+    the router at all - the turn limit applies regardless of how a specialist
+    was chosen, unlike the two checks below which are about the routing
+    decision itself.
+    """
+    settings = settings or get_settings()
+    return conversation.assistant_turns >= settings.max_agent_turns
+
+
 def escalation_reason(
     route: Route,
     conversation: Conversation,
@@ -36,9 +48,10 @@ def escalation_reason(
 ) -> EscalationReason | None:
     """Return why this conversation needs a human, or None to let an agent run.
 
-    Checks run earliest-cause-first: a conversation that was badly routed *and*
-    then ran out of turns reports the routing problem, because that is the one
-    worth fixing.
+    Only used on a conversation's first turn, when there is a fresh Route to
+    judge. Checks run earliest-cause-first: a conversation that was badly
+    routed *and* had already run out of turns reports the routing problem,
+    because that is the one worth fixing.
     """
     settings = settings or get_settings()
 
@@ -48,7 +61,7 @@ def escalation_reason(
     if route.confidence < settings.router_confidence_threshold:
         return EscalationReason.LOW_CONFIDENCE
 
-    if conversation.assistant_turns >= settings.max_agent_turns:
+    if turn_limit_reached(conversation, settings):
         return EscalationReason.TURN_LIMIT_REACHED
 
     return None

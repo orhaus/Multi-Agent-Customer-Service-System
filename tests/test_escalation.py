@@ -5,7 +5,7 @@ gets a case. No mocking needed - this is pure logic over plain objects.
 """
 
 from customer_service.config import Settings
-from customer_service.escalation import EscalationReason, escalation_reason
+from customer_service.escalation import EscalationReason, escalation_reason, turn_limit_reached
 from customer_service.schemas import Category, Conversation, Message, Route
 
 # threshold 0.7, at most 3 assistant turns
@@ -74,3 +74,16 @@ def test_unknown_is_reported_before_low_confidence():
 def test_the_reason_is_a_plain_string_in_logs_and_json():
     reason = escalation_reason(route(confidence=0.1), conversation(), SETTINGS)
     assert f"{reason}" == "low_confidence"
+
+
+# turn_limit_reached is exercised directly because the orchestrator needs it on
+# turns that never build a Route at all - a conversation a specialist already
+# owns has nothing for escalation_reason() to judge.
+
+
+def test_turn_limit_reached_is_false_below_the_limit():
+    assert turn_limit_reached(conversation(assistant_turns=2), SETTINGS) is False
+
+
+def test_turn_limit_reached_is_true_at_the_limit():
+    assert turn_limit_reached(conversation(assistant_turns=3), SETTINGS) is True

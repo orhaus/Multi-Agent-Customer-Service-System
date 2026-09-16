@@ -38,6 +38,13 @@ class Conversation(BaseModel):
     id: str
     messages: list[Message] = Field(default_factory=list)
 
+    # None until a specialist has taken the conversation. The orchestrator sets
+    # this after the first turn so later turns skip the router - re-classifying
+    # a one-word reply like "android" in isolation is meaningless and was
+    # sending healthy conversations to a human. The specialist itself is still
+    # free to notice it's the wrong fit and hand off, via the existing decline.
+    assigned_category: Category | None = None
+
     @property
     def latest_customer_message(self) -> str | None:
         """What the router classifies. None if the customer hasn't spoken yet."""

@@ -17,7 +17,7 @@ from customer_service.agents.base import Agent, AgentError
 from customer_service.agents.billing import BillingAgent
 from customer_service.agents.technical import TechnicalAgent
 from customer_service.config import Settings, get_settings
-from customer_service.escalation import EscalationReason, escalation_reason
+from customer_service.escalation import EscalationReason, escalation_reason, turn_limit_reached
 from customer_service.router import Router
 from customer_service.schemas import Category, Conversation, Resolution
 
@@ -55,14 +55,26 @@ class Orchestrator:
         }
 
     def handle(self, conversation: Conversation) -> Resolution:
-        route = self._router.route(conversation)
+        if conversation.assigned_category is None:
+            # First turn: nothing has been classified yet, so ask the router.
+            route = self._router.route(conversation)
+            reason = escalation_reason(route, conversation, self._settings)
+            if reason is not None:
+                return self._handoff(conversation, route.category, reason)
+            category = route.category
+        else:
+            # A specialist already owns this conversation. Re-running the router
+            # on a single reply like "android" has nothing to classify - it
+            # isn't a fresh support request, it's an answer to whatever the
+            # specialist just asked. The specialist keeps the conversation; if a
+            # later message turns out not to be theirs after all, its own
+            # decline (below) is what notices - not the router guessing blind.
+            if turn_limit_reached(conversation, self._settings):
+                return self._handoff(
+                    conversation, conversation.assigned_category, EscalationReason.TURN_LIMIT_REACHED
+                )
+            category = conversation.assigned_category
 
-        reason = escalation_reason(route, conversation, self._settings)
-        if reason is not None:
-            return self._handoff(conversation, route.category, reason)
-
-        # escalation_reason() has ruled out UNKNOWN, so this is a real specialist.
-        category = route.category
         tried: list[Category] = []
 
         while True:
@@ -76,6 +88,8 @@ class Orchestrator:
                 return self._handoff(conversation, category, EscalationReason.AGENT_FAILED, rerouted_from)
 
             if answer.handled:
+                # Remembered so the *next* turn skips the router entirely.
+                conversation.assigned_category = category
                 return Resolution(
                     conversation_id=conversation.id,
                     category=category,

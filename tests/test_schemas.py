@@ -62,3 +62,13 @@ def test_category_serialises_as_its_string_value():
     """StrEnum keeps logs and JSON readable: 'billing', not 'Category.BILLING'."""
     route = Route(category=Category.BILLING, confidence=0.9, reasoning="refund")
     assert route.model_dump()["category"] == "billing"
+
+
+def test_a_new_conversation_has_no_assigned_specialist():
+    assert Conversation(id="c4").assigned_category is None
+
+
+def test_assigned_category_can_be_set_after_a_specialist_takes_the_conversation():
+    conversation = Conversation(id="c5")
+    conversation.assigned_category = Category.TECHNICAL
+    assert conversation.assigned_category is Category.TECHNICAL

@@ -15,7 +15,17 @@ from customer_service.schemas import AgentReply, Category, Conversation, Message
 SETTINGS = Settings.from_env(
     {"GEMINI_API_KEY": "test-gemini-key", "ROUTER_CONFIDENCE_THRESHOLD": "0.7", "MAX_AGENT_TURNS": "3"}
 )
-CONVERSATION = Conversation(id="c1", messages=[Message(role="customer", content="help")])
+
+
+def conversation(*turns: tuple[str, str], assigned_category: Category | None = None) -> Conversation:
+    """A fresh Conversation per call - handle() now mutates assigned_category,
+    so sharing one instance across tests would leak state between them."""
+    turns = turns or (("customer", "help"),)
+    return Conversation(
+        id="c1",
+        messages=[Message(role=role, content=content) for role, content in turns],
+        assigned_category=assigned_category,
+    )
 
 
 def router_picks(category: Category, confidence: float = 0.9) -> MagicMock:
@@ -39,21 +49,23 @@ def declines(to: Category, text: str = "not mine") -> AgentReply:
     return AgentReply(handled=False, suggested_category=to, reply=text)
 
 
-def run(router, billing=None, technical=None, extra_agents=None):
+def run(router, billing=None, technical=None, extra_agents=None, conv=None):
     agents = {Category.BILLING: billing or agent(), Category.TECHNICAL: technical or agent()}
     agents.update(extra_agents or {})
-    return Orchestrator(settings=SETTINGS, router=router, agents=agents).handle(CONVERSATION)
+    return Orchestrator(settings=SETTINGS, router=router, agents=agents).handle(conv or conversation())
 
 
 def test_the_routed_specialist_answers():
+    conv = conversation()
     billing, technical = agent(handles("Refund noted.")), agent()
-    result = run(router_picks(Category.BILLING), billing, technical)
+    result = run(router_picks(Category.BILLING), billing, technical, conv=conv)
 
     assert result.reply == "Refund noted."
     assert result.category is Category.BILLING
     assert not result.escalated
     assert result.rerouted_from is None
     technical.reply.assert_not_called()
+    assert conv.assigned_category is Category.BILLING  # so the next turn skips the router
 
 
 def test_router_level_escalation_never_reaches_an_agent():
@@ -145,5 +157,84 @@ def test_a_failure_after_rerouting_still_records_the_original_route():
     )
 
     assert result.escalation_reason == EscalationReason.AGENT_FAILED
+    assert result.category is Category.TECHNICAL
+    assert result.rerouted_from is Category.BILLING
+
+
+# --- follow-up turns: once a specialist owns the conversation ---------------
+#
+# The bug this fixes: a router asked to classify a lone reply like "android"
+# has nothing to go on and comes back UNKNOWN, throwing away a conversation
+# that was going fine. Once assigned_category is set, the router is skipped
+# entirely - the owning specialist keeps the conversation, and its own decline
+# is what notices if that later stops being the right fit.
+
+
+def test_a_follow_up_turn_skips_the_router_entirely():
+    router = router_picks(Category.BILLING)  # would answer if called
+    technical = agent(handles("Let's get that Android crash sorted."))
+    conv = conversation(
+        ("customer", "app crashes in settings"),
+        ("assistant", "which OS?"),
+        ("customer", "android"),
+        assigned_category=Category.TECHNICAL,
+    )
+
+    result = run(router, technical=technical, conv=conv)
+
+    assert result.reply == "Let's get that Android crash sorted."
+    assert result.category is Category.TECHNICAL
+    assert not result.escalated
+    router.route.assert_not_called()
+
+
+def test_a_follow_up_turn_sees_the_full_conversation():
+    technical = agent(handles("ok"))
+    conv = conversation(
+        ("customer", "app crashes in settings"),
+        ("assistant", "which OS?"),
+        ("customer", "android"),
+        assigned_category=Category.TECHNICAL,
+    )
+
+    run(router_picks(Category.BILLING), technical=technical, conv=conv)
+
+    sent = technical.reply.call_args.args[0]
+    assert len(sent.messages) == 3
+
+
+def test_a_follow_up_turn_still_respects_the_turn_limit():
+    router = router_picks(Category.BILLING)
+    billing = agent()
+    conv = conversation(
+        ("customer", "still stuck"), ("assistant", "try X"),
+        ("customer", "no"), ("assistant", "try Y"),
+        ("customer", "no"), ("assistant", "try Z"),
+        assigned_category=Category.BILLING,
+    )
+
+    result = run(router, billing=billing, conv=conv)
+
+    assert result.escalated
+    assert result.escalation_reason == EscalationReason.TURN_LIMIT_REACHED
+    assert result.category is Category.BILLING
+    router.route.assert_not_called()
+    billing.reply.assert_not_called()
+
+
+def test_a_declined_follow_up_turn_can_still_reroute():
+    """The specialist, not the router, is what notices a later pivot."""
+    billing = agent(declines(Category.TECHNICAL))
+    technical = agent(handles("Sure, let's look at the crash."))
+    conv = conversation(
+        ("customer", "when's my invoice due"),
+        ("assistant", "the 5th - anything else?"),
+        ("customer", "also the app keeps crashing"),
+        assigned_category=Category.BILLING,
+    )
+
+    result = run(router_picks(Category.BILLING), billing, technical, conv=conv)
+
+    assert result.reply == "Sure, let's look at the crash."
     assert result.category is Category.TECHNICAL
     assert result.rerouted_from is Category.BILLING
