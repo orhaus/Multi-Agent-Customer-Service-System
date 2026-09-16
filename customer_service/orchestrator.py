@@ -10,8 +10,9 @@
 import logging
 from collections.abc import Mapping
 
-import anthropic
+from google import genai
 
+from customer_service import llm
 from customer_service.agents.base import Agent, AgentError
 from customer_service.agents.billing import BillingAgent
 from customer_service.agents.technical import TechnicalAgent
@@ -39,14 +40,14 @@ class Orchestrator:
 
     def __init__(
         self,
-        client: anthropic.Anthropic | None = None,
+        client: genai.Client | None = None,
         settings: Settings | None = None,
         router: Router | None = None,
         agents: Mapping[Category, Agent] | None = None,
     ) -> None:
         self._settings = settings or get_settings()
         if router is None or agents is None:
-            client = client or anthropic.Anthropic()
+            client = client or llm.make_client(self._settings)
 
         self._router = router or Router(client=client, settings=self._settings)
         self._agents = dict(agents) if agents is not None else {

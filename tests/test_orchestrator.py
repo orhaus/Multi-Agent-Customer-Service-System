@@ -13,7 +13,7 @@ from customer_service.orchestrator import HANDOFF_MESSAGE, Orchestrator
 from customer_service.schemas import AgentReply, Category, Conversation, Message, Route
 
 SETTINGS = Settings.from_env(
-    {"ANTHROPIC_API_KEY": "sk-ant-test", "ROUTER_CONFIDENCE_THRESHOLD": "0.7", "MAX_AGENT_TURNS": "3"}
+    {"GEMINI_API_KEY": "test-gemini-key", "ROUTER_CONFIDENCE_THRESHOLD": "0.7", "MAX_AGENT_TURNS": "3"}
 )
 CONVERSATION = Conversation(id="c1", messages=[Message(role="customer", content="help")])
 

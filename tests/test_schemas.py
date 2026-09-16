@@ -17,7 +17,7 @@ def test_confidence_must_be_a_probability():
 
 
 def test_route_rejects_unexpected_fields():
-    """Claude returning an extra key is an error we see, not one we ignore."""
+    """The model returning an extra key is an error we see, not one we ignore."""
     with pytest.raises(ValidationError):
         Route.model_validate(
             {

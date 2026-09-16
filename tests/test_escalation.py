@@ -11,7 +11,7 @@ from customer_service.schemas import Category, Conversation, Message, Route
 # threshold 0.7, at most 3 assistant turns
 SETTINGS = Settings.from_env(
     {
-        "ANTHROPIC_API_KEY": "sk-ant-test",
+        "GEMINI_API_KEY": "test-gemini-key",
         "ROUTER_CONFIDENCE_THRESHOLD": "0.7",
         "MAX_AGENT_TURNS": "3",
     }

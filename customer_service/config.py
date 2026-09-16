@@ -16,10 +16,10 @@ from pydantic import BaseModel, Field, SecretStr
 class Settings(BaseModel):
     """Validated configuration for one run of the system."""
 
-    anthropic_api_key: SecretStr
+    gemini_api_key: SecretStr
 
-    router_model: str = "claude-haiku-4-5"
-    agent_model: str = "claude-opus-5"
+    router_model: str = "gemini-3.5-flash-lite"
+    agent_model: str = "gemini-3.8-flash"
 
     router_confidence_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
     max_agent_turns: int = Field(default=6, gt=0)

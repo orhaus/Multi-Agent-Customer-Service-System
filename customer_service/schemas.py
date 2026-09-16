@@ -55,7 +55,7 @@ class Conversation(BaseModel):
 class Route(BaseModel):
     """The router's decision.
 
-    This crosses the boundary to Claude - it doubles as the JSON schema the
+    This crosses the boundary to the model - it doubles as the JSON schema the
     router asks the model to fill in - so it forbids extra fields.
     """
 
@@ -69,9 +69,9 @@ class Route(BaseModel):
 class AgentReply(BaseModel):
     """A specialist's answer, plus whether it should have been the one answering.
 
-    Like Route, Claude fills this in, so extra fields are forbidden. Field order
-    matters: the model writes `handled` before `reply`, so it decides whether
-    the problem is its own before drafting an answer to it.
+    Like Route, the model fills this in, so extra fields are forbidden. `handled`
+    is listed before `reply` so that a model writing keys in schema order decides
+    whether the problem is its own before drafting an answer to it.
     """
 
     model_config = ConfigDict(extra="forbid")

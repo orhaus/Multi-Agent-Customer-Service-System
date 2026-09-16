@@ -9,13 +9,13 @@ from pydantic import ValidationError
 
 from customer_service.config import Settings
 
-MINIMAL = {"ANTHROPIC_API_KEY": "sk-ant-test"}
+MINIMAL = {"GEMINI_API_KEY": "test-gemini-key"}
 
 
 def test_defaults_apply_when_only_the_key_is_set():
     settings = Settings.from_env(MINIMAL)
-    assert settings.router_model == "claude-haiku-4-5"
-    assert settings.agent_model == "claude-opus-5"
+    assert settings.router_model == "gemini-3.5-flash-lite"
+    assert settings.agent_model == "gemini-3.8-flash"
     assert settings.router_confidence_threshold == 0.7
     assert settings.max_agent_turns == 6
 
@@ -47,5 +47,5 @@ def test_zero_agent_turns_is_rejected():
 def test_api_key_is_not_exposed_by_repr():
     """SecretStr keeps the key out of logs, tracebacks and error messages."""
     settings = Settings.from_env(MINIMAL)
-    assert "sk-ant-test" not in repr(settings)
-    assert settings.anthropic_api_key.get_secret_value() == "sk-ant-test"
+    assert "test-gemini-key" not in repr(settings)
+    assert settings.gemini_api_key.get_secret_value() == "test-gemini-key"
