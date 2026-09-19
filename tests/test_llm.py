@@ -53,7 +53,7 @@ class FakeGemini:
         )
 
 
-def generate(fake: FakeGemini, schema=Route, messages=None, attempts: int = 1):
+def generate(fake: FakeGemini, schema=Route, messages=None, attempts: int = 1, tools=None):
     return llm.generate(
         fake.client(attempts),
         model="gemini-test",
@@ -61,6 +61,7 @@ def generate(fake: FakeGemini, schema=Route, messages=None, attempts: int = 1):
         messages=messages or [Message(role="customer", content="I was charged twice")],
         schema=schema,
         thinking_level="MINIMAL",
+        tools=tools,
     )
 
 
@@ -173,3 +174,102 @@ def test_retries_recover_from_a_brief_quota_error():
 
     assert result.category is Category.BILLING
     assert len(fake.requests) == 3
+
+
+# --- tool calling ---------------------------------------------------------
+#
+# Gemini accepts tools and a response schema in one request: the model answers
+# with a function call when it needs data, and with the schema once it has it.
+
+
+def lookup_invoice(invoice_id: str) -> dict:
+    """Look up one invoice by its id."""
+    return {"invoice_id": invoice_id, "amount": 29.00, "date": "2026-03-03"}
+
+
+def explode(anything: str) -> dict:
+    """A tool whose backend is having a bad day."""
+    raise RuntimeError("backend down")
+
+
+def calls_tool(name: str, **args) -> tuple[int, dict]:
+    """A response in which the model asks for a tool instead of answering."""
+    return 200, {
+        "candidates": [
+            {
+                "content": {"role": "model", "parts": [{"functionCall": {"name": name, "args": args}}]},
+                "finishReason": "STOP",
+            }
+        ]
+    }
+
+
+def test_a_tool_call_is_run_and_its_result_sent_back():
+    fake = FakeGemini(calls_tool("lookup_invoice", invoice_id="inv_1042"), ok(ROUTE_JSON))
+
+    result = generate(fake, tools=[lookup_invoice])
+
+    assert result.category is Category.BILLING  # the model got its answer out
+    assert len(fake.requests) == 2
+
+    sent_back = fake.requests[1]["contents"][-1]["parts"][0]["functionResponse"]
+    assert sent_back["name"] == "lookup_invoice"
+    assert sent_back["response"]["amount"] == 29.00
+
+
+def test_tools_are_declared_from_the_plain_python_functions():
+    """tools.py stays provider-agnostic; the SDK reads signature and docstring."""
+    fake = FakeGemini(ok(ROUTE_JSON))
+    generate(fake, tools=[lookup_invoice])
+
+    declared = fake.requests[0]["tools"][0]["functionDeclarations"][0]
+    assert declared["name"] == "lookup_invoice"
+    assert "invoice" in declared["description"].lower()
+    assert "invoice_id" in declared["parameters"]["properties"]
+
+
+def test_without_tools_the_request_declares_none():
+    fake = FakeGemini(ok(ROUTE_JSON))
+    generate(fake)
+    assert "tools" not in fake.requests[0]
+
+
+def test_the_models_own_turn_is_echoed_back_verbatim():
+    """On Gemini 3 those parts carry thought signatures; rebuilding loses them."""
+    fake = FakeGemini(calls_tool("lookup_invoice", invoice_id="inv_1042"), ok(ROUTE_JSON))
+    generate(fake, tools=[lookup_invoice])
+
+    echoed = fake.requests[1]["contents"][-2]
+    assert echoed["role"] == "model"
+    assert echoed["parts"][0]["functionCall"]["name"] == "lookup_invoice"
+
+
+def test_a_tool_the_model_invented_comes_back_as_an_error():
+    fake = FakeGemini(calls_tool("get_the_moon", thing="cheese"), ok(ROUTE_JSON))
+
+    result = generate(fake, tools=[lookup_invoice])
+
+    assert result.category is Category.BILLING  # the turn survives
+    response = fake.requests[1]["contents"][-1]["parts"][0]["functionResponse"]["response"]
+    assert "error" in response
+
+
+def test_a_tool_that_raises_becomes_an_error_not_a_crash():
+    """A bug in our own backend must not kill the customer's turn."""
+    fake = FakeGemini(calls_tool("explode", anything="please"), ok(ROUTE_JSON))
+
+    result = generate(fake, tools=[explode])
+
+    assert result.category is Category.BILLING
+    response = fake.requests[1]["contents"][-1]["parts"][0]["functionResponse"]["response"]
+    assert "backend down" in response["error"]
+
+
+def test_a_model_that_never_stops_calling_tools_is_cut_off():
+    endless = [calls_tool("lookup_invoice", invoice_id="inv_1042")] * (llm.MAX_TOOL_ROUNDS + 1)
+    fake = FakeGemini(*endless)
+
+    with pytest.raises(llm.LLMError, match="giving up"):
+        generate(fake, tools=[lookup_invoice])
+
+    assert len(fake.requests) == llm.MAX_TOOL_ROUNDS + 1
