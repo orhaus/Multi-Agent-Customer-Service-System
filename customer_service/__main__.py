@@ -8,20 +8,19 @@ handed off - so you can watch the routing decisions as they happen.
 """
 
 import logging
-import uuid
 from collections.abc import Callable
 
 from pydantic import ValidationError
 
 from customer_service.config import get_settings
 from customer_service.orchestrator import Orchestrator
-from customer_service.schemas import Conversation, Message, Resolution
+from customer_service.schemas import Conversation, Resolution
 
 EXIT_WORDS = {"exit", "quit"}
 
 
 def new_conversation() -> Conversation:
-    return Conversation(id=uuid.uuid4().hex[:8])
+    return Conversation()
 
 
 def describe(result: Resolution) -> str:
@@ -60,8 +59,7 @@ def chat(
         if text.lower() in EXIT_WORDS:
             return
 
-        conversation.messages.append(Message(role="customer", content=text))
-        result = orchestrator.handle(conversation)
+        result = orchestrator.turn(conversation, text)
 
         write(f"support> {result.reply}")
         write(f"         {describe(result)}\n")
@@ -70,8 +68,6 @@ def chat(
             # A person owns this conversation now; the bot shouldn't keep talking in it.
             write("(A person has this conversation now. Starting a new one.)\n")
             conversation = new_conversation()
-        else:
-            conversation.messages.append(Message(role="assistant", content=result.reply))
 
 
 def main() -> int:

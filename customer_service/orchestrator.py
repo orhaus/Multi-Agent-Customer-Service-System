@@ -19,7 +19,7 @@ from customer_service.agents.technical import TechnicalAgent
 from customer_service.config import Settings, get_settings
 from customer_service.escalation import EscalationReason, escalation_reason, turn_limit_reached
 from customer_service.router import Router
-from customer_service.schemas import Category, Conversation, Resolution
+from customer_service.schemas import Category, Conversation, Message, Resolution
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +112,25 @@ class Orchestrator:
 
             logger.info("Rerouting conversation %s from %s to %s", conversation.id, category, suggested)
             category = suggested
+
+    def turn(self, conversation: Conversation, message: str) -> Resolution:
+        """Record the customer's message, answer it, and record the reply.
+
+        The conversation is updated in place, so the next turn sees the history
+        and the specialist that took it. An escalated turn deliberately records
+        no assistant message: a person owns the conversation from there, and
+        what they say next is not ours to put words around.
+
+        Every caller needs these rules - the terminal client and the HTTP API
+        both go through here so they cannot drift apart.
+        """
+        conversation.messages.append(Message(role="customer", content=message))
+        resolution = self.handle(conversation)
+
+        if not resolution.escalated:
+            conversation.messages.append(Message(role="assistant", content=resolution.reply))
+
+        return resolution
 
     def _handoff(
         self,

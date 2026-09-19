@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from customer_service import __main__ as cli
 from customer_service.config import Settings
 from customer_service.escalation import EscalationReason
-from customer_service.schemas import Category, Resolution
+from customer_service.schemas import Category, Message, Resolution
 
 
 def scripted(*lines: str):
@@ -39,15 +39,25 @@ def handed_off(reason: EscalationReason) -> Resolution:
 
 
 def fake_orchestrator(*results: Resolution):
-    """Returns each result in turn, recording what the conversation looked like at each call."""
+    """Returns each result in turn, recording what the conversation looked like at each call.
+
+    Stands in for Orchestrator.turn, so it keeps that method's contract: record
+    the customer's message, and record the reply only when nobody was escalated
+    to. Orchestrator.turn's own behaviour is covered in test_orchestrator.py.
+    """
     seen = []
 
-    def handle(conversation):
+    def turn(conversation, message: str):
+        conversation.messages.append(Message(role="customer", content=message))
         seen.append((conversation.id, [(m.role, m.content) for m in conversation.messages]))
-        return results[len(seen) - 1]
+
+        result = results[len(seen) - 1]
+        if not result.escalated:
+            conversation.messages.append(Message(role="assistant", content=result.reply))
+        return result
 
     orchestrator = MagicMock()
-    orchestrator.handle.side_effect = handle
+    orchestrator.turn.side_effect = turn
     return orchestrator, seen
 
 

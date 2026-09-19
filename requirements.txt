@@ -1,6 +1,8 @@
+fastapi~=0.141          # HTTP layer
 google-genai~=2.23      # Gemini API client
 httpx~=0.28           # imported directly: network errors bypass the SDK's own exceptions
 pydantic~=2.13          # schemas for messages, routes, verdicts
 python-dotenv~=1.2      # loads .env in local development
+uvicorn~=0.53           # ASGI server for the HTTP layer
 
 pytest~=9.0             # dev only

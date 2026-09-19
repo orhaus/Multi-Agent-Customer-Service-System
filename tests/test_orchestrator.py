@@ -238,3 +238,64 @@ def test_a_declined_follow_up_turn_can_still_reroute():
     assert result.reply == "Sure, let's look at the crash."
     assert result.category is Category.TECHNICAL
     assert result.rerouted_from is Category.BILLING
+
+
+# --- turn(): the shared rules for recording a turn ------------------------
+#
+# Both the terminal client and the HTTP API go through this, so the rules about
+# what ends up in the history live here rather than in each caller.
+
+
+def take_turn(router, billing=None, technical=None, conv=None, message="help"):
+    agents = {Category.BILLING: billing or agent(), Category.TECHNICAL: technical or agent()}
+    orchestrator = Orchestrator(settings=SETTINGS, router=router, agents=agents)
+    conversation = conv if conv is not None else Conversation(id="c1")
+    return orchestrator.turn(conversation, message), conversation
+
+
+def test_a_turn_records_the_question_and_the_answer():
+    _, conversation = take_turn(
+        router_picks(Category.BILLING),
+        agent(handles("Refund noted.")),
+        message="I want a refund",
+    )
+
+    assert [(m.role, m.content) for m in conversation.messages] == [
+        ("customer", "I want a refund"),
+        ("assistant", "Refund noted."),
+    ]
+
+
+def test_an_escalated_turn_records_the_question_but_not_a_reply():
+    """A person owns the conversation from here; the handoff line is not history."""
+    _, conversation = take_turn(
+        router_picks(Category.BILLING, confidence=0.2), message="something vague"
+    )
+
+    assert [(m.role, m.content) for m in conversation.messages] == [
+        ("customer", "something vague")
+    ]
+
+
+def test_a_turn_remembers_the_specialist_for_the_next_one():
+    _, conversation = take_turn(router_picks(Category.TECHNICAL), technical=agent(handles("ok")))
+    assert conversation.assigned_category is Category.TECHNICAL
+
+
+def test_a_second_turn_builds_on_the_first():
+    router = router_picks(Category.TECHNICAL)
+    technical = agent(handles("which OS?"), handles("Try reinstalling."))
+    _, conversation = take_turn(router, technical=technical, message="app crashes")
+
+    orchestrator = Orchestrator(
+        settings=SETTINGS,
+        router=router,
+        agents={Category.BILLING: agent(), Category.TECHNICAL: technical},
+    )
+    resolution = orchestrator.turn(conversation, "android")
+
+    assert resolution.reply == "Try reinstalling."
+    assert [m.content for m in conversation.messages] == [
+        "app crashes", "which OS?", "android", "Try reinstalling.",
+    ]
+    assert router.route.call_count == 1  # the second turn never re-classified

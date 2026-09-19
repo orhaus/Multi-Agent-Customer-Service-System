@@ -6,6 +6,7 @@ Keeping them in one file means a change to the contract is one diff, not a
 hunt through four modules.
 """
 
+import uuid
 from enum import StrEnum
 from typing import Literal
 
@@ -35,7 +36,8 @@ class Message(BaseModel):
 class Conversation(BaseModel):
     """Everything said so far, plus the ID we log and trace against."""
 
-    id: str
+    # Short rather than a full uuid: it exists to correlate log lines by eye.
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex[:8])
     messages: list[Message] = Field(default_factory=list)
 
     # None until a specialist has taken the conversation. The orchestrator sets
