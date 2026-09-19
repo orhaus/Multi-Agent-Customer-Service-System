@@ -26,12 +26,19 @@ billing - invoices, charges, refunds, payment methods, subscriptions, plan \
 changes, pricing.
 technical - errors, bugs, outages, login failures, configuration, integrations \
 and how-to questions.
-unknown - anything that fits neither, fits both, or is too vague to tell apart.
+unknown - only when the message states no problem at all: a greeting, a \
+thank-you, or a request to be contacted with no topic attached.
+
+When a message touches both specialisms, pick the one the customer most wants \
+solved. Do not answer unknown because two categories apply. A wrong pick is \
+cheap - the specialist who receives it can hand the conversation to the other \
+one - while unknown takes up a person who could be doing work only a person can \
+do.
 
 Confidence is your probability that the category is correct, from 0 to 1. Report \
-it honestly. A message that could plausibly belong to either category should \
-score low, not high: low confidence sends the conversation to a human, which is \
-the right outcome when you are unsure.
+it honestly: low confidence sends the conversation to a human instead of a \
+specialist. Reserve that for messages you genuinely cannot place, not for ones \
+where two specialisms both apply.
 
 Reasoning is one short sentence naming the signal you classified on.\
 """
