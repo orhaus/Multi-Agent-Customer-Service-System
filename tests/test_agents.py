@@ -15,6 +15,7 @@ from customer_service.agents.billing import BillingAgent
 from customer_service.agents.technical import TechnicalAgent
 from customer_service.config import Settings
 from customer_service.schemas import AgentReply, Category, Conversation, Message
+from customer_service.tools import BILLING_TOOLS, DEMO_CUSTOMER_ID
 
 SETTINGS = Settings.from_env({"GEMINI_API_KEY": "test-gemini-key"})
 HANDLED = AgentReply(handled=True, suggested_category=Category.BILLING, reply="I have checked your invoice.")
@@ -75,6 +76,26 @@ def test_asks_the_agent_model_for_an_agent_reply_at_low_thinking(generate):
     assert kwargs["model"] == SETTINGS.agent_model
     assert kwargs["schema"] is AgentReply
     assert kwargs["thinking_level"] == THINKING == "LOW"
+
+
+def test_billing_can_look_records_up_and_technical_cannot(generate):
+    """Tools are per specialist: billing reads real records, technical has none."""
+    reply(BillingAgent)
+    assert generate.call_args.kwargs["tools"] == BILLING_TOOLS
+
+    reply(TechnicalAgent)
+    assert generate.call_args.kwargs["tools"] is None
+
+
+def test_the_agent_is_told_which_customer_it_is_helping(generate):
+    """Lookups are per customer, so the id has to reach the model."""
+    reply(BillingAgent)
+    assert f"You are helping customer {DEMO_CUSTOMER_ID}." in generate.call_args.kwargs["system"]
+
+
+def test_a_caller_can_override_the_customer(generate):
+    BillingAgent(client=MagicMock(), settings=SETTINGS, customer_id="cus_other").reply(CONVERSATION)
+    assert "You are helping customer cus_other." in generate.call_args.kwargs["system"]
 
 
 def test_a_model_failure_becomes_an_agent_error(generate):

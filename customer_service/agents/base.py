@@ -6,6 +6,7 @@ lives here, so adding a third specialist means writing a prompt, not another
 model call.
 """
 
+from collections.abc import Callable, Sequence
 from typing import ClassVar
 
 from google import genai
@@ -13,6 +14,7 @@ from google import genai
 from customer_service import llm
 from customer_service.config import Settings, get_settings
 from customer_service.schemas import AgentReply, Category, Conversation
+from customer_service.tools import DEMO_CUSTOMER_ID
 
 # Customer support is not a hard reasoning task. Starting low keeps replies fast
 # and within free-tier limits; raise it if the eval set shows quality suffering.
@@ -21,8 +23,9 @@ THINKING: llm.ThinkingLevel = "LOW"
 SHARED_RULES = """\
 You are replying directly to a customer. Be concise, specific and warm.
 
-Never invent an account detail, a charge, a date or a policy. If answering \
-needs information you do not have, say what you need and ask for it.
+Never invent an account detail, a charge, a date or a policy. When you have a \
+tool that can find it, use the tool and answer from what it returns. When you \
+do not, say what you need and ask the customer for it.
 
 Answer in the structured format you have been given:
 - handled: true if you are the right specialist for this problem, false if you \
@@ -50,13 +53,22 @@ class Agent:
     category: ClassVar[Category]
     system_prompt: ClassVar[str]
 
+    # What this specialist may look up. Empty means it answers from the
+    # conversation alone, which is where every specialist starts.
+    tools: ClassVar[Sequence[Callable[..., dict]]] = ()
+
     def __init__(
         self,
         client: genai.Client | None = None,
         settings: Settings | None = None,
+        customer_id: str = DEMO_CUSTOMER_ID,
     ) -> None:
         self._settings = settings or get_settings()
         self._client = client or llm.make_client(self._settings)
+        # Tools are per-customer, so the agent has to know who it is helping.
+        # Working that out from the conversation would be its own feature; for
+        # now the demo customer is the default and callers can override it.
+        self._customer_id = customer_id
 
     def reply(self, conversation: Conversation) -> AgentReply:
         """Answer the customer, or say this problem belongs to someone else.
@@ -65,14 +77,21 @@ class Agent:
         Failing is not, and raises AgentError. The orchestrator decides what
         either means, so that logic lives in one place.
         """
+        system = (
+            f"{self.system_prompt}\n\n"
+            f"Your specialism is {self.category}.\n"
+            f"You are helping customer {self._customer_id}.\n\n"
+            f"{SHARED_RULES}"
+        )
         try:
             answer = llm.generate(
                 self._client,
                 model=self._settings.agent_model,
-                system=f"{self.system_prompt}\n\nYour specialism is {self.category}.\n\n{SHARED_RULES}",
+                system=system,
                 messages=conversation.messages,
                 schema=AgentReply,
                 thinking_level=THINKING,
+                tools=self.tools or None,
             )
         except llm.LLMError as exc:
             raise AgentError(f"{type(self).__name__} could not reply") from exc
