@@ -17,7 +17,7 @@ import argparse
 import json
 import time
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from customer_service import llm, router
