@@ -1,0 +1,191 @@
+[
+  {
+    "message": "I was charged twice for March",
+    "expected": ["billing"],
+    "note": "plain duplicate-charge report"
+  },
+  {
+    "message": "Can I get a refund for last month?",
+    "expected": ["billing"],
+    "note": "refund request"
+  },
+  {
+    "message": "How do I update my credit card?",
+    "expected": ["billing"],
+    "note": "payment method change"
+  },
+  {
+    "message": "What's included in the Pro plan?",
+    "expected": ["billing"],
+    "note": "plan and pricing question"
+  },
+  {
+    "message": "when does my subscription renew",
+    "expected": ["billing"],
+    "note": "lowercase, no punctuation - real customers type like this"
+  },
+  {
+    "message": "I want to cancel my subscription",
+    "expected": ["billing"],
+    "note": "cancellation"
+  },
+  {
+    "message": "my invoice says $58 but I expected $29",
+    "expected": ["billing"],
+    "note": "invoice dispute"
+  },
+  {
+    "message": "Do you offer annual billing?",
+    "expected": ["billing"],
+    "note": "billing options"
+  },
+  {
+    "message": "I was billed after cancelling",
+    "expected": ["billing"],
+    "note": "billing after cancellation"
+  },
+  {
+    "message": "can you send me a receipt for invoice 1042",
+    "expected": ["billing"],
+    "note": "document request, names an invoice"
+  },
+
+  {
+    "message": "app crashed when i open settings",
+    "expected": ["technical"],
+    "note": "verbatim from a real session - terse, no apostrophe"
+  },
+  {
+    "message": "I can't log in, it says invalid password",
+    "expected": ["technical"],
+    "note": "auth failure"
+  },
+  {
+    "message": "The export button does nothing",
+    "expected": ["technical"],
+    "note": "broken UI control"
+  },
+  {
+    "message": "Getting a 500 error on the dashboard",
+    "expected": ["technical"],
+    "note": "explicit error code"
+  },
+  {
+    "message": "how do i connect the slack integration",
+    "expected": ["technical"],
+    "note": "how-to, integration setup"
+  },
+  {
+    "message": "is the api down?",
+    "expected": ["technical"],
+    "note": "suspected outage"
+  },
+  {
+    "message": "my data isn't syncing between devices",
+    "expected": ["technical"],
+    "note": "sync defect"
+  },
+  {
+    "message": "the mobile app is really slow since the update",
+    "expected": ["technical"],
+    "note": "performance regression"
+  },
+  {
+    "message": "where do i find my api key",
+    "expected": ["technical"],
+    "note": "product how-to"
+  },
+  {
+    "message": "csv upload fails with 'invalid format'",
+    "expected": ["technical"],
+    "note": "import error"
+  },
+
+  {
+    "message": "hi",
+    "expected": ["unknown"],
+    "note": "greeting with no content - nothing to classify"
+  },
+  {
+    "message": "hello, are you there?",
+    "expected": ["unknown"],
+    "note": "opener, still no problem stated"
+  },
+  {
+    "message": "I need help",
+    "expected": ["unknown"],
+    "note": "asks for help without saying with what"
+  },
+  {
+    "message": "this is ridiculous",
+    "expected": ["unknown"],
+    "note": "pure frustration, no topic - a human should take this"
+  },
+  {
+    "message": "can someone call me",
+    "expected": ["unknown"],
+    "note": "channel request, no topic"
+  },
+  {
+    "message": "???",
+    "expected": ["unknown"],
+    "note": "no information at all"
+  },
+  {
+    "message": "thanks!",
+    "expected": ["unknown"],
+    "note": "closing pleasantry, not a request"
+  },
+
+  {
+    "message": "I paid for Pro but can't access the features",
+    "expected": ["billing", "technical"],
+    "note": "genuinely both - either specialist is a fair first guess, the decline re-routes"
+  },
+  {
+    "message": "charged for a plan I can't even log into",
+    "expected": ["billing", "technical"],
+    "note": "both, and the one that caused the re-routing feature to exist"
+  },
+  {
+    "message": "I upgraded and now it's broken",
+    "expected": ["billing", "technical"],
+    "note": "billing action, technical symptom"
+  },
+  {
+    "message": "I can't update my payment method, the page errors out",
+    "expected": ["billing", "technical"],
+    "note": "billing intent blocked by a technical fault"
+  },
+  {
+    "message": "your app deleted my invoice pdf",
+    "expected": ["billing", "technical"],
+    "note": "billing artefact, technical cause"
+  },
+
+  {
+    "message": "I'd like to upgrade to Pro",
+    "expected": ["billing"],
+    "note": "adversarial: sounds like a product question, is a plan change"
+  },
+  {
+    "message": "how much does the API cost",
+    "expected": ["billing"],
+    "note": "adversarial: says 'API' but is a pricing question"
+  },
+  {
+    "message": "the pricing page won't load",
+    "expected": ["technical"],
+    "note": "adversarial: says 'pricing' but is a broken page"
+  },
+  {
+    "message": "stop charging me",
+    "expected": ["billing"],
+    "note": "adversarial: angry and terse, but unambiguously billing"
+  },
+  {
+    "message": "my account is locked",
+    "expected": ["billing", "technical"],
+    "note": "adversarial: could be non-payment or an auth fault"
+  }
+]
