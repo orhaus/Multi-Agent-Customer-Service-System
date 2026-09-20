@@ -15,9 +15,11 @@ conversation or keep it in a store keyed by a session id.
 """
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from customer_service.orchestrator import Orchestrator
@@ -86,3 +88,9 @@ def chat(
     trace = Trace()
     resolution = orchestrator.turn(conversation, request.message, trace)
     return ChatResponse(resolution=resolution, trace=trace, conversation=conversation)
+
+
+# Mounted last, and at "/", so it catches everything the routes above didn't.
+# Serving the page from the same app means one process and one container - no
+# CORS, no second deploy, nothing to build.
+app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True))

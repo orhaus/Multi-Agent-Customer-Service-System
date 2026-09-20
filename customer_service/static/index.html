@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multi-Agent Customer Service</title>
+<style>
+  :root {
+    --bg: #0f1116;
+    --panel: #171a21;
+    --line: #262b36;
+    --text: #e6e8ed;
+    --muted: #8b93a3;
+    --customer: #1e2531;
+    --accent: #6ea8fe;
+    --warn: #e0a458;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+  header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  header h1 { font-size: 15px; font-weight: 600; margin: 0; }
+  header span { color: var(--muted); font-size: 13px; }
+
+  #transcript {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    max-width: 760px;
+    width: 100%;
+    margin: 0 auto;
+  }
+  .exchange { margin-bottom: 22px; }
+
+  .bubble {
+    padding: 10px 14px;
+    border-radius: 10px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .customer .bubble {
+    background: var(--customer);
+    margin-left: auto;
+    max-width: 80%;
+    width: fit-content;
+  }
+  .support .bubble { background: var(--panel); border: 1px solid var(--line); }
+  .error .bubble { background: #2a1a1a; border: 1px solid #573; border-color: #6b3232; }
+
+  .who {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+  .customer .who { text-align: right; }
+
+  .meta { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .meta .escalated { color: var(--warn); }
+
+  .handoff {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--muted);
+    border-top: 1px dashed var(--line);
+    padding-top: 10px;
+  }
+
+  #composer {
+    display: flex;
+    gap: 10px;
+    padding: 14px 20px;
+    border-top: 1px solid var(--line);
+    max-width: 760px;
+    width: 100%;
+    margin: 0 auto;
+  }
+  #message {
+    flex: 1;
+    padding: 11px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--text);
+    font: inherit;
+  }
+  #message:focus { outline: none; border-color: var(--accent); }
+  button {
+    padding: 0 20px;
+    border-radius: 8px;
+    border: 0;
+    background: var(--accent);
+    color: #0b0d12;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { opacity: .45; cursor: default; }
+
+  .thinking { color: var(--muted); font-size: 13px; }
+  .thinking::after {
+    content: "";
+    animation: dots 1.2s steps(4, end) infinite;
+  }
+  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Multi-Agent Customer Service</h1>
+  <span>billing &amp; technical specialists, with escalation to a human</span>
+</header>
+
+<div id="transcript"></div>
+
+<form id="composer">
+  <input id="message" autocomplete="off" placeholder="Describe your problem…" required>
+  <button type="submit">Send</button>
+</form>
+
+<script>
+const transcript = document.getElementById("transcript");
+const composer = document.getElementById("composer");
+const input = document.getElementById("message");
+const button = composer.querySelector("button");
+
+// The server is stateless: we hold the conversation and send it back each turn.
+// Null means the next message starts a fresh one - which is what we want after
+// an escalation, because a person owns that conversation now.
+let conversation = null;
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function addExchange(who, label, text, className) {
+  const block = el("div", `exchange ${who} ${className || ""}`);
+  block.append(el("div", "who", label), el("div", "bubble", text));
+  transcript.append(block);
+  transcript.scrollTop = transcript.scrollHeight;
+  return block;
+}
+
+function describe(resolution) {
+  if (resolution.escalated) {
+    const detail = `handed to a human · ${resolution.escalation_reason}`;
+    return resolution.rerouted_from ? `${detail} · rerouted from ${resolution.rerouted_from}` : detail;
+  }
+  const detail = `answered by ${resolution.category}`;
+  return resolution.rerouted_from ? `${detail} · rerouted from ${resolution.rerouted_from}` : detail;
+}
+
+async function send(text) {
+  const response = await fetch("/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: text, conversation }),
+  });
+  if (!response.ok) throw new Error(`the server returned ${response.status}`);
+  return response.json();
+}
+
+// Enter sends. preventDefault first so this replaces the browser's implicit
+// form submission rather than firing alongside it.
+input.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    composer.requestSubmit();
+  }
+});
+
+composer.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const text = input.value.trim();
+  if (!text) return;
+
+  addExchange("customer", "you", text);
+  input.value = "";
+  input.disabled = button.disabled = true;
+
+  const pending = addExchange("support", "support", "");
+  pending.querySelector(".bubble").replaceChildren(el("span", "thinking", "thinking"));
+
+  try {
+    const data = await send(text);
+    conversation = data.resolution.escalated ? null : data.conversation;
+
+    pending.querySelector(".bubble").textContent = data.resolution.reply;
+    const meta = el("div", "meta", describe(data.resolution));
+    if (data.resolution.escalated) meta.classList.add("escalated");
+    pending.append(meta);
+
+    if (data.resolution.escalated) {
+      pending.append(el("div", "handoff", "A person has this conversation now. Your next message starts a new one."));
+    }
+  } catch (error) {
+    pending.classList.add("error");
+    pending.querySelector(".bubble").textContent = `Could not reach the support system — ${error.message}`;
+  } finally {
+    input.disabled = button.disabled = false;
+    input.focus();
+    transcript.scrollTop = transcript.scrollHeight;
+  }
+});
+
+input.focus();
+</script>
+
+</body>
+</html>

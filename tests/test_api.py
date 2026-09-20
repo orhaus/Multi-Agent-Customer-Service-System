@@ -190,3 +190,20 @@ def test_the_trace_carries_the_escalation_reason(client_for):
 
     assert trace["escalation_reason"] == "low_confidence"
     assert trace["agents"][0]["handled"] is False
+
+
+def test_the_page_is_served_from_the_same_app(client_for):
+    """One process, one container: no CORS and no second deploy."""
+    client, _ = client_for()
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Multi-Agent Customer Service" in response.text
+
+
+def test_mounting_the_page_did_not_shadow_the_api(client_for):
+    """StaticFiles is mounted at "/", so the routes must still win."""
+    client, _ = client_for(answered("still here"))
+
+    assert client.get("/health").json() == {"status": "ok"}
+    assert client.post("/chat", json={"message": "hi"}).json()["resolution"]["reply"] == "still here"
