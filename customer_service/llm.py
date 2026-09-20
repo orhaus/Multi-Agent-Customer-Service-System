@@ -18,7 +18,7 @@ from google.genai import errors, types
 from pydantic import BaseModel, ValidationError
 
 from customer_service.config import Settings
-from customer_service.schemas import Message
+from customer_service.schemas import Message, ToolCall
 
 logger = logging.getLogger(__name__)
 
@@ -146,8 +146,13 @@ def generate(
     schema: type[T],
     thinking_level: ThinkingLevel,
     tools: Sequence[Callable[..., dict]] | None = None,
+    on_tool_call: Callable[[ToolCall], None] | None = None,
 ) -> T:
     """Ask the model for an instance of `schema`, validated by us.
+
+    `on_tool_call` is how a lookup becomes visible to the caller. A callback
+    rather than a return value, so the signature stays "ask for a schema, get a
+    schema" for the callers that don't care.
 
     With `tools`, the model may answer with a function call instead of an
     answer. We run it, hand back the result, and ask again - until it has what
@@ -183,17 +188,16 @@ def generate(
         # On Gemini 3 those parts carry thought signatures, and dropping them
         # loses the reasoning that led to the call.
         contents.append(response.candidates[0].content)
-        contents.append(
-            types.Content(
-                role="user",
-                parts=[
-                    types.Part.from_function_response(
-                        name=call.name, response=_run_tool(call, functions)
-                    )
-                    for call in calls
-                ],
-            )
-        )
+        parts = []
+        for call in calls:
+            result = _run_tool(call, functions)
+            if on_tool_call is not None:
+                on_tool_call(
+                    ToolCall(name=call.name or "?", arguments=dict(call.args or {}), result=result)
+                )
+            parts.append(types.Part.from_function_response(name=call.name, response=result))
+
+        contents.append(types.Content(role="user", parts=parts))
         logger.info("Ran tools: %s", ", ".join(call.name or "?" for call in calls))
     else:
         raise LLMError(f"Still calling tools after {MAX_TOOL_ROUNDS} rounds; giving up")

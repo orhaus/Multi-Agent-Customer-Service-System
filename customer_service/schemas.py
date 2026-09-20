@@ -8,7 +8,7 @@ hunt through four modules.
 
 import uuid
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -73,6 +73,19 @@ class Route(BaseModel):
     category: Category
     confidence: float = Field(ge=0.0, le=1.0)
     reasoning: str = Field(min_length=1)
+
+
+class ToolCall(BaseModel):
+    """One lookup the model asked for, and what came back.
+
+    Part of the trace rather than the answer: it records how a reply was
+    reached, which is what you need when a reply looks wrong. `result` holds
+    the tool's error dict too, since a failed lookup is a step worth seeing.
+    """
+
+    name: str
+    arguments: dict[str, Any]
+    result: dict[str, Any]
 
 
 class AgentReply(BaseModel):

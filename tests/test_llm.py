@@ -15,7 +15,7 @@ from google.genai import types
 from pydantic import ValidationError
 
 from customer_service import llm
-from customer_service.schemas import AgentReply, Category, Message, Route
+from customer_service.schemas import AgentReply, Category, Message, Route, ToolCall
 
 ROUTE_JSON = '{"category": "billing", "confidence": 0.9, "reasoning": "duplicate charge"}'
 QUOTA = (429, {"error": {"code": 429, "message": "Resource has been exhausted", "status": "RESOURCE_EXHAUSTED"}})
@@ -53,7 +53,8 @@ class FakeGemini:
         )
 
 
-def generate(fake: FakeGemini, schema=Route, messages=None, attempts: int = 1, tools=None):
+def generate(fake: FakeGemini, schema=Route, messages=None, attempts: int = 1, tools=None,
+             on_tool_call=None):
     return llm.generate(
         fake.client(attempts),
         model="gemini-test",
@@ -62,6 +63,7 @@ def generate(fake: FakeGemini, schema=Route, messages=None, attempts: int = 1, t
         schema=schema,
         thinking_level="MINIMAL",
         tools=tools,
+        on_tool_call=on_tool_call,
     )
 
 
@@ -273,3 +275,47 @@ def test_a_model_that_never_stops_calling_tools_is_cut_off():
         generate(fake, tools=[lookup_invoice])
 
     assert len(fake.requests) == llm.MAX_TOOL_ROUNDS + 1
+
+
+# --- reporting tool calls to the caller -----------------------------------
+#
+# Lookups happen deep in here, but the trace that explains a reply is assembled
+# further up. The callback is how one reaches the other.
+
+
+def test_each_tool_call_is_reported_with_its_arguments_and_result():
+    fake = FakeGemini(calls_tool("lookup_invoice", invoice_id="inv_1042"), ok(ROUTE_JSON))
+    seen: list[ToolCall] = []
+
+    generate(fake, tools=[lookup_invoice], on_tool_call=seen.append)
+
+    assert seen == [
+        ToolCall(
+            name="lookup_invoice",
+            arguments={"invoice_id": "inv_1042"},
+            result={"invoice_id": "inv_1042", "amount": 29.00, "date": "2026-03-03"},
+        )
+    ]
+
+
+def test_a_failed_lookup_is_reported_too():
+    """A tool that errored is a step worth seeing, not one to hide."""
+    fake = FakeGemini(calls_tool("explode", anything="please"), ok(ROUTE_JSON))
+    seen: list[ToolCall] = []
+
+    generate(fake, tools=[explode], on_tool_call=seen.append)
+
+    assert len(seen) == 1
+    assert "backend down" in seen[0].result["error"]
+
+
+def test_nothing_is_reported_when_the_model_answers_directly():
+    seen: list[ToolCall] = []
+    generate(FakeGemini(ok(ROUTE_JSON)), tools=[lookup_invoice], on_tool_call=seen.append)
+    assert seen == []
+
+
+def test_reporting_is_optional():
+    """Callers that don't want the trace pass nothing and are unaffected."""
+    fake = FakeGemini(calls_tool("lookup_invoice", invoice_id="inv_1042"), ok(ROUTE_JSON))
+    assert generate(fake, tools=[lookup_invoice]).category is Category.BILLING
