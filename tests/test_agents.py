@@ -127,3 +127,16 @@ def test_every_specialist_declares_a_distinct_category():
     assert len(set(categories)) == len(specialists)
     assert Category.UNKNOWN not in categories
     assert all(issubclass(cls, Agent) for cls in specialists)
+
+
+def test_an_agent_lets_the_caller_watch_its_lookups(generate):
+    """The agent doesn't collect its own tool calls - it passes the watcher down."""
+    watcher = object()
+    BillingAgent(client=MagicMock(), settings=SETTINGS).reply(CONVERSATION, on_tool_call=watcher)
+
+    assert generate.call_args.kwargs["on_tool_call"] is watcher
+
+
+def test_not_watching_is_the_default(generate):
+    reply()
+    assert generate.call_args.kwargs["on_tool_call"] is None

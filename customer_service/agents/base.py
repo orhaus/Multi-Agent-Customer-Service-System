@@ -13,7 +13,7 @@ from google import genai
 
 from customer_service import llm
 from customer_service.config import Settings, get_settings
-from customer_service.schemas import AgentReply, Category, Conversation
+from customer_service.schemas import AgentReply, Category, Conversation, ToolCall
 from customer_service.tools import DEMO_CUSTOMER_ID
 
 # Customer support is not a hard reasoning task. Starting low keeps replies fast
@@ -70,12 +70,19 @@ class Agent:
         # now the demo customer is the default and callers can override it.
         self._customer_id = customer_id
 
-    def reply(self, conversation: Conversation) -> AgentReply:
+    def reply(
+        self,
+        conversation: Conversation,
+        on_tool_call: Callable[[ToolCall], None] | None = None,
+    ) -> AgentReply:
         """Answer the customer, or say this problem belongs to someone else.
 
         Declining is a normal outcome and comes back as data (handled=False).
         Failing is not, and raises AgentError. The orchestrator decides what
         either means, so that logic lives in one place.
+
+        `on_tool_call` is passed straight through to the model layer: this
+        agent doesn't collect its own lookups, it just lets the caller watch.
         """
         system = (
             f"{self.system_prompt}\n\n"
@@ -92,6 +99,7 @@ class Agent:
                 schema=AgentReply,
                 thinking_level=THINKING,
                 tools=self.tools or None,
+                on_tool_call=on_tool_call,
             )
         except llm.LLMError as exc:
             raise AgentError(f"{type(self).__name__} could not reply") from exc
