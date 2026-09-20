@@ -66,6 +66,7 @@ class Orchestrator:
     def handle(self, conversation: Conversation, trace: Trace | None = None) -> Resolution:
         """Answer one message. Pass a Trace to find out how it was answered."""
         trace = trace if trace is not None else Trace()
+        trace.confidence_threshold = self._settings.router_confidence_threshold
         started = time.monotonic()
         try:
             return self._handle(conversation, trace)

@@ -406,3 +406,9 @@ def test_a_follow_up_turn_has_no_route_to_show():
 def test_asking_for_no_trace_still_works():
     result = run(router_picks(Category.BILLING), agent(handles("Sorted.")))
     assert result.reply == "Sorted."
+
+
+def test_the_trace_records_what_the_confidence_was_measured_against():
+    """A bare 0.62 says nothing without the line it had to clear."""
+    _, trace = traced(router_picks(Category.BILLING), agent(handles()))
+    assert trace.confidence_threshold == SETTINGS.router_confidence_threshold == 0.7

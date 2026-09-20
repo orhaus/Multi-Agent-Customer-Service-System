@@ -127,6 +127,10 @@ class Trace(BaseModel):
     agents: list[AgentStep] = Field(default_factory=list)
     seconds: float = 0.0
 
+    # What the router's confidence was actually measured against. Without it a
+    # reader only sees "0.62" and cannot tell whether that was good enough.
+    confidence_threshold: float | None = None
+
 
 class Resolution(BaseModel):
     """What the orchestrator hands back to the caller."""
