@@ -12,24 +12,46 @@ from fastapi.testclient import TestClient
 from customer_service.api import app, get_orchestrator
 from customer_service.escalation import EscalationReason
 from customer_service.orchestrator import HANDOFF_MESSAGE
-from customer_service.schemas import Category, Conversation, Message, Resolution
+from customer_service.schemas import (
+    AgentStep,
+    Category,
+    Conversation,
+    Message,
+    Resolution,
+    Route,
+    ToolCall,
+    Trace,
+)
 
 
 class FakeOrchestrator:
-    """Keeps Orchestrator.turn's contract: record the question, and record the
-    answer only when nobody was escalated to."""
+    """Keeps Orchestrator.turn's contract: record the question, record the
+    answer only when nobody was escalated to, and fill in the trace."""
 
     def __init__(self, *results: Resolution):
         self.results = list(results)
         self.seen: list[Conversation] = []
 
-    def turn(self, conversation: Conversation, message: str) -> Resolution:
+    def turn(self, conversation: Conversation, message: str, trace: Trace | None = None) -> Resolution:
         conversation.messages.append(Message(role="customer", content=message))
         result = self.results.pop(0)
 
         if not result.escalated:
             conversation.messages.append(Message(role="assistant", content=result.reply))
             conversation.assigned_category = result.category
+
+        if trace is not None:
+            trace.route = Route(category=result.category, confidence=0.91, reasoning="test")
+            trace.escalation_reason = result.escalation_reason
+            trace.agents = [
+                AgentStep(
+                    category=result.category,
+                    handled=not result.escalated,
+                    tools=[ToolCall(name="list_invoices", arguments={"customer_id": "cus_demo"},
+                                    result={"invoices": []})],
+                )
+            ]
+            trace.seconds = 1.25
 
         self.seen.append(conversation.model_copy(deep=True))
         return result
@@ -147,3 +169,24 @@ def test_bad_requests_are_rejected_before_the_model(client_for, payload):
     client, fake = client_for()
     assert client.post("/chat", json=payload).status_code == 422
     assert fake.seen == []
+
+
+def test_the_response_explains_how_the_reply_was_reached(client_for):
+    """The trace is what a caller renders to show the routing, not take it on trust."""
+    client, _ = client_for(answered("I've checked your invoice."))
+    trace = client.post("/chat", json={"message": "charged twice"}).json()["trace"]
+
+    assert trace["route"]["category"] == "billing"
+    assert trace["route"]["confidence"] == 0.91
+    assert trace["route"]["reasoning"] == "test"
+    assert trace["agents"][0]["handled"] is True
+    assert trace["agents"][0]["tools"][0]["name"] == "list_invoices"
+    assert trace["seconds"] == 1.25
+
+
+def test_the_trace_carries_the_escalation_reason(client_for):
+    client, _ = client_for(handed_off(EscalationReason.LOW_CONFIDENCE))
+    trace = client.post("/chat", json={"message": "hmm"}).json()["trace"]
+
+    assert trace["escalation_reason"] == "low_confidence"
+    assert trace["agents"][0]["handled"] is False

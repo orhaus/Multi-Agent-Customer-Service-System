@@ -21,7 +21,7 @@ from fastapi import Depends, FastAPI
 from pydantic import BaseModel, Field
 
 from customer_service.orchestrator import Orchestrator
-from customer_service.schemas import Conversation, Resolution
+from customer_service.schemas import Conversation, Resolution, Trace
 
 app = FastAPI(
     title="Multi-Agent Customer Service",
@@ -52,7 +52,11 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    resolution: Resolution = Field(description="The reply, and how it was arrived at.")
+    resolution: Resolution = Field(description="What the customer should see next.")
+    trace: Trace = Field(
+        description="How that reply was reached: the routing decision, every specialist "
+        "tried, the lookups each one made, and why a conversation was escalated."
+    )
     conversation: Conversation = Field(
         description="Send this back with the next message so the conversation continues. "
         "After an escalation, start a new one instead - a person has this conversation."
@@ -79,5 +83,6 @@ def chat(
     a customer waiting on support should get.
     """
     conversation = request.conversation or Conversation()
-    resolution = orchestrator.turn(conversation, request.message)
-    return ChatResponse(resolution=resolution, conversation=conversation)
+    trace = Trace()
+    resolution = orchestrator.turn(conversation, request.message, trace)
+    return ChatResponse(resolution=resolution, trace=trace, conversation=conversation)
