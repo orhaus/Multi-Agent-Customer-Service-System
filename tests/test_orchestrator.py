@@ -10,7 +10,15 @@ from customer_service.agents.base import AgentError
 from customer_service.config import Settings
 from customer_service.escalation import EscalationReason
 from customer_service.orchestrator import HANDOFF_MESSAGE, Orchestrator
-from customer_service.schemas import AgentReply, Category, Conversation, Message, Route
+from customer_service.schemas import (
+    AgentReply,
+    Category,
+    Conversation,
+    Message,
+    Route,
+    ToolCall,
+    Trace,
+)
 
 SETTINGS = Settings.from_env(
     {"GEMINI_API_KEY": "test-gemini-key", "ROUTER_CONFIDENCE_THRESHOLD": "0.7", "MAX_AGENT_TURNS": "3"}
@@ -299,3 +307,102 @@ def test_a_second_turn_builds_on_the_first():
         "app crashes", "which OS?", "android", "Try reinstalling.",
     ]
     assert router.route.call_count == 1  # the second turn never re-classified
+
+
+# --- the trace: how an answer was arrived at ------------------------------
+#
+# Optional, so callers that only want the reply are unaffected. The HTTP API
+# asks for one so a caller can see the routing rather than take it on trust.
+
+
+def looks_up(*names: str):
+    """An agent that reports a lookup before answering, the way a real one does."""
+    def reply(conversation, on_tool_call=None):
+        for name in names:
+            if on_tool_call:
+                on_tool_call(ToolCall(name=name, arguments={"id": "inv_1042"}, result={"amount": 29.0}))
+        return handles("Found it.")
+
+    fake = MagicMock()
+    fake.reply.side_effect = reply
+    return fake
+
+
+def traced(router, billing=None, technical=None, conv=None):
+    trace = Trace()
+    agents = {Category.BILLING: billing or agent(), Category.TECHNICAL: technical or agent()}
+    orchestrator = Orchestrator(settings=SETTINGS, router=router, agents=agents)
+    resolution = orchestrator.handle(conv or conversation(), trace)
+    return resolution, trace
+
+
+def test_the_trace_records_the_routing_decision():
+    _, trace = traced(router_picks(Category.BILLING), agent(handles()))
+
+    assert trace.route.category is Category.BILLING
+    assert trace.route.confidence == 0.9
+    assert trace.escalation_reason is None
+    assert trace.seconds >= 0
+
+
+def test_the_trace_records_which_specialist_answered():
+    _, trace = traced(router_picks(Category.BILLING), agent(handles()))
+
+    assert len(trace.agents) == 1
+    assert trace.agents[0].category is Category.BILLING
+    assert trace.agents[0].handled is True
+    assert trace.agents[0].suggested_category is None
+
+
+def test_the_trace_shows_both_specialists_when_rerouted():
+    """The thing worth seeing: who declined, to whom, and who picked it up."""
+    _, trace = traced(
+        router_picks(Category.BILLING),
+        agent(declines(Category.TECHNICAL)),
+        agent(handles("Let's get you logged in.")),
+    )
+
+    assert [step.category for step in trace.agents] == [Category.BILLING, Category.TECHNICAL]
+    assert trace.agents[0].handled is False
+    assert trace.agents[0].suggested_category is Category.TECHNICAL
+    assert trace.agents[1].handled is True
+
+
+def test_lookups_are_attributed_to_the_agent_that_made_them():
+    _, trace = traced(
+        router_picks(Category.BILLING),
+        agent(declines(Category.TECHNICAL)),
+        looks_up("list_invoices"),
+    )
+
+    assert trace.agents[0].tools == []
+    assert [tool.name for tool in trace.agents[1].tools] == ["list_invoices"]
+
+
+def test_the_trace_records_why_a_conversation_was_escalated():
+    _, trace = traced(router_picks(Category.BILLING, confidence=0.2))
+
+    assert trace.escalation_reason == EscalationReason.LOW_CONFIDENCE
+    assert trace.agents == []  # no specialist was ever asked
+
+
+def test_a_failed_agent_is_marked_as_failed_not_declined():
+    _, trace = traced(router_picks(Category.BILLING), agent(AgentError("boom")))
+
+    assert trace.agents[0].failed is True
+    assert trace.agents[0].handled is False
+    assert trace.escalation_reason == EscalationReason.AGENT_FAILED
+
+
+def test_a_follow_up_turn_has_no_route_to_show():
+    """The router is skipped once a specialist owns the conversation."""
+    conv = conversation(("customer", "android"), assigned_category=Category.TECHNICAL)
+    _, trace = traced(router_picks(Category.BILLING), technical=agent(handles()), conv=conv)
+
+    assert trace.route is None
+    assert trace.agents[0].category is Category.TECHNICAL
+
+
+def test_asking_for_no_trace_still_works():
+    result = run(router_picks(Category.BILLING), agent(handles("Sorted.")))
+    assert result.reply == "Sorted."

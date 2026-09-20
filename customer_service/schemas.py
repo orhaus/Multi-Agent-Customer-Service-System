@@ -103,6 +103,31 @@ class AgentReply(BaseModel):
     reply: str
 
 
+class AgentStep(BaseModel):
+    """One specialist's attempt at a conversation."""
+
+    category: Category
+    handled: bool
+    suggested_category: Category | None = None  # set when it declined
+    tools: list[ToolCall] = Field(default_factory=list)
+    failed: bool = False  # the call itself broke, as opposed to declining
+
+
+class Trace(BaseModel):
+    """How a reply was arrived at, as opposed to what the reply was.
+
+    Separate from Resolution on purpose: a Resolution is what the customer
+    sees and should stay small, while a trace is for whoever has to explain or
+    debug the answer. `agents` has more than one entry when a conversation was
+    re-routed; `route` is None on later turns, which skip the router entirely.
+    """
+
+    route: Route | None = None
+    escalation_reason: str | None = None
+    agents: list[AgentStep] = Field(default_factory=list)
+    seconds: float = 0.0
+
+
 class Resolution(BaseModel):
     """What the orchestrator hands back to the caller."""
 
