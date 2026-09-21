@@ -254,6 +254,27 @@ function confidenceBar(confidence, threshold) {
   return wrap;
 }
 
+// Raw JSON cut to a character count ends mid-key and reads as a rendering bug.
+// Describe the shape instead: a list becomes its length, a nested object a
+// placeholder, and anything still too long is cut at a comma with an ellipsis.
+function summariseResult(result) {
+  if (result === null || typeof result !== "object") return String(result);
+  if (result.error) return `error: ${result.error}`;
+
+  const parts = Object.entries(result).map(([key, value]) => {
+    if (Array.isArray(value)) return `${key}: ${value.length} item${value.length === 1 ? "" : "s"}`;
+    if (value !== null && typeof value === "object") return `${key}: {…}`;
+    return `${key}: ${value}`;
+  });
+
+  const text = parts.join(", ");
+  if (text.length <= 110) return text;
+
+  const cut = text.slice(0, 110);
+  const lastComma = cut.lastIndexOf(",");
+  return `${(lastComma > 40 ? cut.slice(0, lastComma) : cut).trimEnd()}…`;
+}
+
 function toolNode(tool) {
   const node = el("div", "tool");
   const args = Object.entries(tool.arguments || {})
@@ -261,12 +282,11 @@ function toolNode(tool) {
     .join(", ");
   node.append(el("code", null, `${tool.name}(${args})`));
 
-  const failed = tool.result && tool.result.error;
-  const summary = failed
-    ? `error: ${tool.result.error}`
-    : `→ ${JSON.stringify(tool.result).slice(0, 90)}`;
-  const result = el("div", "result", summary);
+  const failed = Boolean(tool.result && tool.result.error);
+  const result = el("div", "result", `→ ${summariseResult(tool.result)}`);
   if (failed) result.style.color = "#e08a8a";
+  // The full result is a hover away, so summarising loses nothing.
+  result.title = JSON.stringify(tool.result, null, 2);
   node.append(result);
   return node;
 }
