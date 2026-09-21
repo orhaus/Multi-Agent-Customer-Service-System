@@ -99,9 +99,37 @@ def test_a_misrouted_conversation_moves_to_the_suggested_specialist():
     assert not result.escalated
 
 
-def test_a_declined_reply_is_never_shown_to_the_customer():
-    result = run(router_picks(Category.BILLING), agent(declines(Category.UNKNOWN, "INTERNAL")))
+def test_what_an_agent_found_is_passed_on_when_a_person_takes_over():
+    """The agent may have looked up exactly what the customer and the colleague
+    both need. Discarding it wastes the lookup and the customer's time."""
+    found = "You were charged $29 twice on 3 March, invoices inv_1042 and inv_1043."
+    result = run(router_picks(Category.BILLING), agent(declines(Category.UNKNOWN, found)))
+
+    assert found in result.reply
+    assert HANDOFF_MESSAGE in result.reply
+    assert result.escalated
+
+
+def test_a_reply_written_for_another_specialist_is_not_shown():
+    """Declining toward a specialist means nobody was meant to read that reply,
+    so it may say things that would mislead a customer."""
+    technical = agent(declines(Category.BILLING, "INTERNAL - over to billing"))
+    result = run(
+        router_picks(Category.BILLING), agent(declines(Category.TECHNICAL)), technical
+    )
+
     assert "INTERNAL" not in result.reply
+    assert result.reply == HANDOFF_MESSAGE
+
+
+def test_an_empty_finding_leaves_the_handoff_message_alone():
+    result = run(router_picks(Category.BILLING), agent(declines(Category.UNKNOWN, "   ")))
+    assert result.reply == HANDOFF_MESSAGE
+
+
+def test_a_router_level_escalation_has_no_findings_to_share():
+    """No agent ran, so there is nothing to pass on."""
+    result = run(router_picks(Category.BILLING, confidence=0.2))
     assert result.reply == HANDOFF_MESSAGE
 
 

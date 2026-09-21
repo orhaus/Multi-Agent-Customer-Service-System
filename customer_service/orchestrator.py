@@ -149,8 +149,20 @@ class Orchestrator:
                     "%s agent declined conversation %s (suggested %s); escalating",
                     category, conversation.id, suggested,
                 )
+                # An agent that declined to UNKNOWN asked for a person, not for
+                # another specialist, and wrote its reply for the customer. It
+                # may have looked up exactly what both the customer and the
+                # colleague need, and throwing that away wastes the work twice.
+                # A reply aimed at a *specialist* is not shown: it was written
+                # on the understanding that nobody would read it.
+                findings = answer.reply.strip() if suggested is Category.UNKNOWN else ""
                 return self._handoff(
-                    conversation, category, EscalationReason.AGENT_DECLINED, rerouted_from, trace=trace
+                    conversation,
+                    category,
+                    EscalationReason.AGENT_DECLINED,
+                    rerouted_from,
+                    trace=trace,
+                    findings=findings,
                 )
 
             logger.info("Rerouting conversation %s from %s to %s", conversation.id, category, suggested)
@@ -184,6 +196,7 @@ class Orchestrator:
         reason: EscalationReason,
         rerouted_from: Category | None = None,
         trace: Trace | None = None,
+        findings: str = "",
     ) -> Resolution:
         if trace is not None:
             trace.escalation_reason = reason
@@ -191,7 +204,7 @@ class Orchestrator:
         return Resolution(
             conversation_id=conversation.id,
             category=category,
-            reply=HANDOFF_MESSAGE,
+            reply=f"{findings}\n\n{HANDOFF_MESSAGE}" if findings else HANDOFF_MESSAGE,
             escalated=True,
             escalation_reason=reason,
             rerouted_from=rerouted_from,

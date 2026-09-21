@@ -33,8 +33,16 @@ are not.
 - suggested_category: when handled is false, the specialism the problem really \
 belongs to - billing or technical - or unknown if it needs a person rather than \
 a different specialist. When handled is true, your own specialism.
-- reply: your message to the customer. It is shown only when handled is true, \
-so never tell the customer you are passing them on - the system does that.\
+- reply: your message to the customer. What it should contain depends on the \
+other two fields:
+  - handled true: your answer.
+  - handled false, suggested_category unknown: what you established, in a \
+sentence or two. This IS shown to the customer before a person takes over, and \
+it is what that colleague starts from, so give them the facts you found.
+  - handled false, naming another specialism: not shown to anyone. Keep it short.
+
+Never tell the customer you are passing them on or that someone will follow up \
+- the system says that itself, and saying it twice reads badly.\
 """
 
 
